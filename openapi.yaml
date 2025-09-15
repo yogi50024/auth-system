@@ -1,0 +1,12 @@
+openapi: "3.0.0"
+info:
+  title: Auth API
+  description: API for authentication services
+  version: "1.0.0"
+paths:
+  /auth/login:
+    post:
+      summary: User login
+      responses:
+        '200':
+          description: Successful login
