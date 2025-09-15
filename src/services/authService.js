@@ -442,13 +442,16 @@ class AuthService {
   // Change password
   static async changePassword(userId, currentPassword, newPassword, req) {
     try {
-      const user = await User.findByEmail(userId);
+      const user = await User.findById(userId);
       if (!user) {
         throw new Error('User not found');
       }
 
+      // Get user with password hash for verification
+      const userWithPassword = await User.findByEmail(user.email);
+      
       // Verify current password
-      const isValid = await user.verifyPassword(currentPassword);
+      const isValid = await userWithPassword.verifyPassword(currentPassword);
       if (!isValid) {
         throw new Error('Current password is incorrect');
       }

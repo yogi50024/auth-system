@@ -294,6 +294,19 @@ INSERT INTO users (
     NOW()
 ) ON CONFLICT (email) DO NOTHING;
 
+-- Export download tokens table (for GDPR data export downloads)
+CREATE TABLE export_download_tokens (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    request_id UUID NOT NULL REFERENCES gdpr_requests(id) ON DELETE CASCADE,
+    token VARCHAR(255) NOT NULL UNIQUE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Indexes for export download tokens
+CREATE INDEX idx_export_download_tokens_token ON export_download_tokens(token);
+CREATE INDEX idx_export_download_tokens_expires_at ON export_download_tokens(expires_at);
+
 -- Grant permissions to auth_user
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO auth_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO auth_user;

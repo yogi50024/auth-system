@@ -1,0 +1,57 @@
+[Unit]
+Description=Auth System - Production Authentication Microservice
+Documentation=https://github.com/yogi50024/auth-system
+After=network.target postgresql.service mongod.service redis-server.service
+Wants=postgresql.service mongod.service redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/auth-system
+ExecStart=/usr/bin/node src/app.js
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Environment variables
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOST=localhost
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/auth-system/logs /opt/auth-system/exports
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryLimit=1G
+CPUQuota=200%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=auth-system
+
+# Health check
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

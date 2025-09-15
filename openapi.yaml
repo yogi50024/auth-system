@@ -1,0 +1,933 @@
+openapi: 3.0.3
+info:
+  title: Authentication Microservice API
+  description: |
+    A production-ready authentication microservice with comprehensive security features, 
+    RBAC, JWT tokens, MFA, and GDPR compliance.
+    
+    ## Features
+    - User registration and login with email verification
+    - Role-based access control (Users, Providers, Admins)
+    - JWT token management with access & refresh tokens
+    - Multi-factor authentication using TOTP
+    - Provider registration and verification workflow
+    - GDPR compliance with data export and deletion
+    - Comprehensive audit logging
+    - Rate limiting and security headers
+    
+  version: 1.0.0
+  contact:
+    name: Auth System Support
+    email: support@yourdomain.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.yourdomain.com/api/v1
+    description: Production server
+  - url: https://staging-api.yourdomain.com/api/v1
+    description: Staging server
+  - url: http://localhost:3000/api/v1
+    description: Development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  # Authentication Endpoints
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: Register a new user account with email verification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistration'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Registration successful. Please check your email for verification instructions.
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Login successful
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      tokens:
+                        $ref: '#/components/schemas/TokenPair'
+                      mfaRequired:
+                        type: boolean
+                        example: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User logout
+      description: Logout user and invalidate tokens
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Logged out successfully
+
+  /auth/refresh-token:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Get new access token using refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                  description: Valid refresh token
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      tokens:
+                        $ref: '#/components/schemas/TokenPair'
+
+  /auth/profile:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user profile
+      description: Get authenticated user's profile information
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+
+  /auth/change-password:
+    post:
+      tags:
+        - Authentication
+      summary: Change password
+      description: Change user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentPassword:
+                  type: string
+                  description: Current password
+                newPassword:
+                  type: string
+                  description: New password
+              required:
+                - currentPassword
+                - newPassword
+      responses:
+        '200':
+          description: Password changed successfully
+
+  /auth/mfa/setup:
+    post:
+      tags:
+        - Multi-Factor Authentication
+      summary: Setup MFA
+      description: Initialize MFA setup and get QR code
+      responses:
+        '200':
+          description: MFA setup initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      secret:
+                        type: string
+                        description: Base32 encoded secret
+                      qrCode:
+                        type: string
+                        description: QR code data URL
+                      backupCodes:
+                        type: array
+                        items:
+                          type: string
+                        description: Backup recovery codes
+
+  /auth/mfa/verify:
+    post:
+      tags:
+        - Multi-Factor Authentication
+      summary: Verify and enable MFA
+      description: Verify MFA token and enable MFA for account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: 6-digit TOTP code
+                secret:
+                  type: string
+                  description: MFA secret (optional)
+              required:
+                - token
+      responses:
+        '200':
+          description: MFA enabled successfully
+
+  # Provider Endpoints
+  /providers/register:
+    post:
+      tags:
+        - Providers
+      summary: Register as provider
+      description: Register current user as a service provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderRegistration'
+      responses:
+        '201':
+          description: Provider registration submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      provider:
+                        $ref: '#/components/schemas/Provider'
+
+  /providers/profile:
+    get:
+      tags:
+        - Providers
+      summary: Get provider profile
+      description: Get current user's provider profile
+      responses:
+        '200':
+          description: Provider profile retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      provider:
+                        $ref: '#/components/schemas/Provider'
+    put:
+      tags:
+        - Providers
+      summary: Update provider profile
+      description: Update provider profile information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderUpdate'
+      responses:
+        '200':
+          description: Provider profile updated
+
+  /providers/documents:
+    post:
+      tags:
+        - Providers
+      summary: Upload provider documents
+      description: Upload verification documents for provider
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                documents:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                fileType:
+                  type: string
+                  enum: [license, certificate, identification]
+      responses:
+        '200':
+          description: Documents uploaded successfully
+
+  /providers:
+    get:
+      tags:
+        - Providers (Admin)
+      summary: Get all providers
+      description: Get list of all providers (admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, active, suspended, rejected]
+        - name: businessType
+          in: query
+          schema:
+            type: string
+            enum: [individual, partnership, corporation, llc, nonprofit]
+      responses:
+        '200':
+          description: Providers list retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      providers:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Provider'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+
+  /providers/{id}/verify:
+    patch:
+      tags:
+        - Providers (Admin)
+      summary: Verify provider
+      description: Approve provider application (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Provider verified successfully
+
+  # GDPR Endpoints
+  /gdpr/export:
+    post:
+      tags:
+        - GDPR
+      summary: Request data export
+      description: Request export of all user data
+      responses:
+        '202':
+          description: Export request submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      requestId:
+                        type: string
+                        format: uuid
+                      requestedAt:
+                        type: string
+                        format: date-time
+
+  /gdpr/delete-account:
+    post:
+      tags:
+        - GDPR
+      summary: Request account deletion
+      description: Request permanent deletion of user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirmPassword:
+                  type: string
+                  description: Current password for confirmation
+              required:
+                - confirmPassword
+      responses:
+        '202':
+          description: Deletion request submitted
+
+  /gdpr/compliance-status:
+    get:
+      tags:
+        - GDPR
+      summary: Get GDPR compliance status
+      description: Get user's GDPR compliance information
+      responses:
+        '200':
+          description: Compliance status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      gdprConsent:
+                        type: boolean
+                      gdprConsentDate:
+                        type: string
+                        format: date-time
+                      dataRetentionDate:
+                        type: string
+                        format: date-time
+                      activeRequests:
+                        type: array
+                        items:
+                          type: object
+
+  # User Management (Admin)
+  /users:
+    get:
+      tags:
+        - Users (Admin)
+      summary: Get all users
+      description: Get list of all users (admin only)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [user, provider, admin]
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+        - name: isVerified
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Users list retrieved
+
+  /users/{id}:
+    get:
+      tags:
+        - Users (Admin)
+      summary: Get user by ID
+      description: Get specific user details (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User retrieved successfully
+
+  # Health Check
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Basic health check
+      description: Check if the service is running
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: number
+                  service:
+                    type: string
+                    example: Auth System
+                  version:
+                    type: string
+                    example: 1.0.0
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+          enum: [user, provider, admin]
+        phone:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        isActive:
+          type: boolean
+        isVerified:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        lastLogin:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserRegistration:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        firstName:
+          type: string
+          maxLength: 50
+        lastName:
+          type: string
+          maxLength: 50
+        role:
+          type: string
+          enum: [user, provider]
+          default: user
+        phone:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        gdprConsent:
+          type: boolean
+      required:
+        - email
+        - password
+        - firstName
+        - lastName
+        - gdprConsent
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        mfaCode:
+          type: string
+          pattern: '^[0-9]{6}$'
+      required:
+        - email
+        - password
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: string
+          example: 15m
+
+    Provider:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        businessName:
+          type: string
+        businessType:
+          type: string
+          enum: [individual, partnership, corporation, llc, nonprofit]
+        licenseNumber:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, suspended, rejected]
+        businessAddress:
+          type: object
+          properties:
+            street:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            zipCode:
+              type: string
+            country:
+              type: string
+        website:
+          type: string
+          format: uri
+        description:
+          type: string
+        verifiedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ProviderRegistration:
+      type: object
+      properties:
+        businessName:
+          type: string
+          maxLength: 100
+        businessType:
+          type: string
+          enum: [individual, partnership, corporation, llc, nonprofit]
+        licenseNumber:
+          type: string
+          maxLength: 50
+        taxId:
+          type: string
+          maxLength: 20
+        businessAddress:
+          type: object
+          properties:
+            street:
+              type: string
+              maxLength: 100
+            city:
+              type: string
+              maxLength: 50
+            state:
+              type: string
+              maxLength: 50
+            zipCode:
+              type: string
+              pattern: '^[0-9]{5}(-[0-9]{4})?$'
+            country:
+              type: string
+              length: 2
+          required:
+            - street
+            - city
+            - state
+            - zipCode
+            - country
+        website:
+          type: string
+          format: uri
+        description:
+          type: string
+      required:
+        - businessName
+        - businessType
+        - businessAddress
+
+    ProviderUpdate:
+      type: object
+      properties:
+        businessName:
+          type: string
+        businessType:
+          type: string
+          enum: [individual, partnership, corporation, llc, nonprofit]
+        licenseNumber:
+          type: string
+        website:
+          type: string
+          format: uri
+        description:
+          type: string
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [error, fail]
+        message:
+          type: string
+        code:
+          type: string
+        requestId:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            status: fail
+            message: Validation failed
+            code: VALIDATION_ERROR
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            status: fail
+            message: Authentication required
+            code: AUTHENTICATION_REQUIRED
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            status: fail
+            message: Insufficient permissions
+            code: INSUFFICIENT_PERMISSIONS
+
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            status: fail
+            message: Resource not found
+            code: RESOURCE_NOT_FOUND
+
+    TooManyRequests:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            status: fail
+            message: Too many requests from this IP, please try again later
+            code: RATE_LIMIT_EXCEEDED
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            status: error
+            message: Internal server error
+            code: INTERNAL_ERROR
+
+tags:
+  - name: Authentication
+    description: User authentication and account management
+  - name: Multi-Factor Authentication
+    description: MFA setup and verification
+  - name: Providers
+    description: Provider registration and management
+  - name: Providers (Admin)
+    description: Provider administration (admin only)
+  - name: GDPR
+    description: GDPR compliance and data management
+  - name: Users (Admin)
+    description: User administration (admin only)
+  - name: Health
+    description: Service health and monitoring
